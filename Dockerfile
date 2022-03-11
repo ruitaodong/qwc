@@ -18,7 +18,7 @@ ENV  DEBIAN_FRONTEND noninteractive
 
 RUN apt-get -y update && apt-get install --no-install-recommends -y\
 	apache2 libapache2-mod-fcgid libapache2-mod-php\
-	qgis-server python-qgis qgis make xvfb xfonts-base openssl1.0
+	qgis-server python-qgis qgis make xvfb xfonts-base
 
 ENV APACHE_CONFDIR /etc/apache2
 ENV APACHE_ENVVARS $APACHE_CONFDIR/envvars
@@ -32,6 +32,7 @@ ENV APACHE_LOG_DIR /var/log/apache2
 COPY --from=QWC  /qgis-web-client /QGIS-Web-Client/
 
 COPY etc/qgis-web-client.conf /etc/apache2/sites-enabled/000-default.conf
+COPY bin/	/usr/local/bin/
 
 RUN a2enmod headers
 RUN a2enmod rewrite
@@ -39,4 +40,4 @@ RUN a2enmod rewrite
 ENV QGIS_SERVER_LOG_FILE /dev/stdout
 ENV QGIS_SERVER_LOG_LEVEL 1
 
-CMD	apache2 -DFOREGROUND
+CMD apache2 -DFOREGROUND
