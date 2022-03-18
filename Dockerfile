@@ -1,46 +1,10 @@
-FROM	ubuntu:bionic AS QWC
+FROM	ghcr.io/ruitaodong/qwc-base
+ENV  	DEBIAN_FRONTEND noninteractive
 
-RUN	apt-get update && apt-get install -y ca-certificates git-core sed
-
-RUN	git clone https://github.com/qgis/qgis-web-client.git 
-
-WORKDIR	qgis-web-client
-
-RUN	git checkout bf160af0562cf074eb295ebdbd890b3029ebce6f && /bin/rm -r -f .git
-
-RUN	sed -i "s|var serverAndCGI = \"/cgi-bin/qgis_mapserv.fcgi\"|var serverAndCGI = \"/wms\"|g" site/js/GlobalOptions.js
-RUN	sed -i "s|var enableOSMMaps = true;|var enableOSMMaps = false;|g" site/js/GlobalOptions.js
-RUN	sed -i "s|var enableGoogleCommercialMaps = true;|var enableGoogleCommercialMaps = false;|g" site/js/GlobalOptions.js
-RUN	sed -i "s|<absolute-path-to-qgis-server-projects>|/web/|g" site/index.php
-
-FROM ubuntu:bionic
-ENV  DEBIAN_FRONTEND noninteractive
-
-#-------------Application Specific Stuff ----------------------------------------------------
-
-RUN apt-get -y update && apt-get install --no-install-recommends -y\
-	apache2 libapache2-mod-fcgid libapache2-mod-php qgis-server\
+RUN	apt-get -y update && apt-get install --no-install-recommends -y\
 	python-qgis qgis make xvfb xfonts-base openssl1.0\
 	&& apt-get clean && /bin/rm -r -f /var/lib/apt/lists/*
 
-ENV APACHE_CONFDIR /etc/apache2
-ENV APACHE_ENVVARS $APACHE_CONFDIR/envvars
-ENV APACHE_RUN_USER www-data
-ENV APACHE_RUN_GROUP www-data
-ENV APACHE_RUN_DIR /var/run/apache2
-ENV APACHE_PID_FILE $APACHE_RUN_DIR/apache2.pid
-ENV APACHE_LOCK_DIR /var/lock/apache2
-ENV APACHE_LOG_DIR /var/log/apache2
+COPY	bin/	/usr/local/bin/
 
-COPY --from=QWC  /qgis-web-client/ /QGIS-Web-Client/
-
-COPY etc/qgis-web-client.conf /etc/apache2/sites-enabled/000-default.conf
-COPY bin/	/usr/local/bin/
-
-RUN a2enmod headers
-RUN a2enmod rewrite
-
-ENV QGIS_SERVER_LOG_FILE /dev/stdout
-ENV QGIS_SERVER_LOG_LEVEL 1
-
-CMD apache2 -DFOREGROUND
+WORKDIR	/web
