@@ -9,6 +9,8 @@ WORKDIR	qgis-web-client
 RUN	git checkout bf160af0562cf074eb295ebdbd890b3029ebce6f && /bin/rm -r -f .git
 
 RUN	sed -i "s|var serverAndCGI = \"/cgi-bin/qgis_mapserv.fcgi\"|var serverAndCGI = \"/wms\"|g" site/js/GlobalOptions.js
+RUN	sed -i "s|var enableOSMMaps = true;|var enableOSMMaps = false;|g" site/js/GlobalOptions.js
+RUN	sed -i "s|var enableGoogleCommercialMaps = true;|var enableGoogleCommercialMaps = false;|g" site/js/GlobalOptions.js
 RUN	sed -i "s|<absolute-path-to-qgis-server-projects>|/web/|g" site/index.php
 
 FROM ubuntu:bionic
@@ -18,7 +20,7 @@ ENV  DEBIAN_FRONTEND noninteractive
 
 RUN apt-get -y update && apt-get install --no-install-recommends -y\
 	apache2 libapache2-mod-fcgid libapache2-mod-php qgis-server\
-	python-qgis qgis make xvfb xfonts-base\
+	python-qgis qgis make xvfb xfonts-base openssl1.0\
 	&& apt-get clean && /bin/rm -r -f /var/lib/apt/lists/*
 
 ENV APACHE_CONFDIR /etc/apache2
