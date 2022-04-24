@@ -19,7 +19,7 @@ ENV  	DEBIAN_FRONTEND noninteractive
 #-------------Application Specific Stuff ----------------------------------------------------
 
 RUN 	apt-get -y update && apt-get install --no-install-recommends -y\
-	apache2 libapache2-mod-fcgid libapache2-mod-php qgis-server 
+	apache2 libapache2-mod-fcgid libapache2-mod-php qgis-server\
 	&& apt-get clean && /bin/rm -r -f /var/lib/apt/lists/*
 
 ENV APACHE_CONFDIR /etc/apache2
