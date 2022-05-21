@@ -1,5 +1,6 @@
 #!/usr/bin/env python
 
+from __future__ import print_function
 import os, sys
 
 from qgis.core import *
@@ -39,15 +40,18 @@ if '__main__'  == __name__:
     maps = QgsMapLayerRegistry.instance()
 
     bridge = QgsLayerTreeMapCanvasBridge(root, canvas)
-
+    
     for fName in args.inputs:
         # Assume all in the same directory as fQgs
-        fBase, fExt = os.path.splitext(os.path.split(fName)[1])
-        if fExt in ('.shp', '.xml', '.json'):
+        _, fBase = os.path.split(fName)
+        try:
             layer = QgsVectorLayer(fName, fBase, 'ogr')
-        else:
+            print('added', fName, 'as QgsVectorLayer')
+        except:
+            print('adding', fName, fBase, 'as QgsRasterLayer')
             layer = QgsRasterLayer(fName, fBase)
             layer.setContrastEnhancement(QgsContrastEnhancement.NoEnhancement)
+
         layer.setCrs(crs)
         maps.addMapLayer(layer)
 
