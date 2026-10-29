@@ -7,3 +7,12 @@ updates:
     groups:
       actions:
         patterns: ["*"]
+  # Same for the qwc2 branch (Dependabot only reads this file from master)
+  - package-ecosystem: github-actions
+    directory: /
+    target-branch: qwc2
+    schedule:
+      interval: monthly
+    groups:
+      actions:
+        patterns: ["*"]

@@ -55,7 +55,7 @@ jobs:
           docker run -d --name qwc -p 8080:80 qwc:test
           docker exec qwc python3 -c 'import json; json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "box"}, "geometry": {"type": "Polygon", "coordinates": [[[1e6, 6e6], [1.1e6, 6e6], [1.1e6, 6.1e6], [1e6, 6e6]]]}}]}, open("/web/test.json", "w"))'
           docker exec qwc qgs.sh test.qgs test.json
-          for i in $(seq 30); do curl -fsS http://localhost:8080/ >/dev/null && break; sleep 1; done
+          for _ in $(seq 30); do curl -fsS http://localhost:8080/ >/dev/null && break; sleep 1; done
           curl -fsS http://localhost:8080/ | grep -q "maps/test"
           curl -fsS http://localhost:8080/maps/test | grep -q "GIS"
           curl -fsS "http://localhost:8080/wms/test?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetProjectSettings" | grep -q "<Name>test.json</Name>"
