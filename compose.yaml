@@ -1,10 +1,10 @@
 # Local development: `docker compose up --build`, then open http://localhost:8080
 # Create projects with:
-#   docker compose exec qwc qgs.py name.qgs image.png vector.json
+#   docker compose exec qwc2 qgs.py name.qgs image.png vector.json
 services:
-  qwc:
+  qwc2:
     build: .
-    image: ghcr.io/ruitaodong/qwc
+    image: ghcr.io/ruitaodong/qwc2
     ports:
       # Loopback only by default; QWC_BIND=0.0.0.0 (or a LAN IP) to share on
       # the LAN, or leave it and put `tailscale serve` in front (see README)

@@ -1,18 +1,19 @@
-name: Docker
+name: Docker (qwc2)
 
+# Builds the qwc2 branch into ghcr.io/<owner>/qwc2. GitHub only runs scheduled
+# workflows from the default branch, so the weekly rebuild is triggered by
+# weekly-rebuild-qwc2.yml, which has to live on the default branch.
 on:
-  schedule:
-    - cron: '35 9 * * 1'   # weekly rebuild to pick up Debian security updates
   push:
-    branches: [master]
+    branches: [qwc2]
     tags: ['v*.*.*']
   pull_request:
-    branches: [master]
+    branches: [qwc2]
   workflow_dispatch:
 
 env:
   REGISTRY: ghcr.io
-  IMAGE_NAME: ${{ github.repository }}
+  IMAGE_NAME: ${{ github.repository_owner }}/qwc2
   PLATFORMS: linux/amd64,linux/arm64
 
 concurrency:
@@ -46,8 +47,8 @@ jobs:
           context: .
           load: true
           tags: qwc:test
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=qwc2
+          cache-to: type=gha,mode=max,scope=qwc2
 
       - name: Smoke test
         run: |
@@ -100,12 +101,12 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=latest,enable=${{ github.ref == 'refs/heads/qwc2' }}
             type=ref,event=branch
             type=ref,event=pr
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=schedule,pattern={{date 'YYYYMMDD'}}
+            type=raw,value={{date 'YYYYMMDD'}},enable=${{ github.event_name == 'workflow_dispatch' }}
 
       - name: Build and push multi-arch image
         id: build-and-push
@@ -116,8 +117,8 @@ jobs:
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          cache-from: type=gha,scope=qwc2
+          cache-to: type=gha,mode=max,scope=qwc2
           provenance: mode=max
           sbom: true
 

@@ -1,4 +1,6 @@
-# qwc — QGIS Server + QWC2 in Docker
+# qwc2 — QGIS Server + QWC2 in Docker
+
+This is the `qwc2` branch of [ruitaodong/qwc](https://github.com/ruitaodong/qwc); it publishes `ghcr.io/ruitaodong/qwc2`.
 
 A single container that serves raster/vector files as web maps: Apache with
 [QGIS Server](https://docs.qgis.org/latest/en/docs/server_manual/) (QGIS 3.40 LTR
@@ -11,15 +13,15 @@ maps it offers (`themes.json`) is generated ahead of time.
 ## Quick start
 
 ```sh
-docker pull ghcr.io/ruitaodong/qwc
-docker run --name=qwc --rm -d -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+docker pull ghcr.io/ruitaodong/qwc2
+docker run --name=qwc2 --rm -d -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
 ```
 
 Put your data into the `/web` volume, then create one project per map:
 
 ```sh
-docker exec qwc qgs.py name1.qgs image1.png vector1.json vector2.json
-docker exec qwc qgs.py name2.qgs image2.png vector3.json vector4.json
+docker exec qwc2 qgs.py name1.qgs image1.png vector1.json vector2.json
+docker exec qwc2 qgs.py name2.qgs image2.png vector3.json vector4.json
 ```
 
 Open <http://localhost:8080>. QWC2 opens the first project; its theme switcher
@@ -41,11 +43,11 @@ the container starts and every time `qgs.py` writes a project. If you put
 `.qgs` files into `/web` some other way, refresh it yourself:
 
 ```sh
-docker exec qwc update-themes
+docker exec qwc2 update-themes
 ```
 
 Projects QGIS Server can't open are left out and reported (details in
-`docker logs qwc`); the previous list is kept if the server isn't reachable.
+`docker logs qwc2`); the previous list is kept if the server isn't reachable.
 
 ## `qgs.py` options
 
@@ -81,14 +83,14 @@ street-level imagery) are switched off, so the app makes no requests outside
 your server. Printing is off because `qgs.py` projects have no print layout.
 
 To customise the client, mount your own `config.json` (start from the one in
-the image: `docker cp qwc:/QWC2/config.json .`):
+the image: `docker cp qwc2:/QWC2/config.json .`):
 
 ```sh
-docker run ... -v ./config.json:/QWC2/config.json:ro ghcr.io/ruitaodong/qwc
+docker run ... -v ./config.json:/QWC2/config.json:ro ghcr.io/ruitaodong/qwc2
 ```
 
 Apache access logs go to stdout and Apache/QGIS Server errors to stderr, so
-everything shows up in `docker logs qwc`. The container has a health check.
+everything shows up in `docker logs qwc2`. The container has a health check.
 
 ## Running it on a LAN or a tailnet
 
@@ -98,8 +100,8 @@ network. Two setups work well.
 **LAN.** Publish the port on the LAN interface only:
 
 ```sh
-docker run -d --name=qwc --restart=unless-stopped \
-  -p 192.168.1.20:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+docker run -d --name=qwc2 --restart=unless-stopped \
+  -p 192.168.1.20:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
 ```
 
 Use the host's LAN address rather than a bare `-p 8080:80`, which listens on
@@ -109,8 +111,8 @@ a firewall rule won't save you if the host also has a public interface.
 **Tailscale.** Keep the container on loopback and let Tailscale add HTTPS:
 
 ```sh
-docker run -d --name=qwc --restart=unless-stopped \
-  -p 127.0.0.1:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+docker run -d --name=qwc2 --restart=unless-stopped \
+  -p 127.0.0.1:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
 tailscale serve --bg localhost:8080
 ```
 
@@ -125,8 +127,8 @@ work. Don't use `tailscale funnel`, which publishes the site to the internet.
 port on every interface so one URL, `http://<host>:8080/`, works everywhere:
 
 ```sh
-docker run -d --name=qwc --restart=unless-stopped \
-  -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+docker run -d --name=qwc2 --restart=unless-stopped \
+  -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
 ```
 
 This is fine when the host's only interfaces are the LAN and Tailscale (a
@@ -152,7 +154,7 @@ maps through their browser; desktop GIS clients don't need CORS at all.
 
 ```sh
 docker compose up --build          # serves ./web on http://localhost:8080 (loopback only)
-docker compose exec qwc qgs.py demo.qgs image.png overlay.json
+docker compose exec qwc2 qgs.py demo.qgs image.png overlay.json
 ```
 
 The image is built from a single multi-stage `Dockerfile`. Stage 1 downloads a
@@ -165,15 +167,22 @@ CI (`.github/workflows/docker-publish.yml`) builds the image and smoke-tests it
 (no PHP present, project creation, theme generation, client page, redirects,
 WMS GetProjectSettings and GetMap, theme rebuild on restart), then publishes
 signed multi-arch images (`linux/amd64`, `linux/arm64`) with SBOM and
-provenance to `ghcr.io`. Tags: `latest` and `master` from the default branch,
-`X.Y.Z` / `X.Y` from `vX.Y.Z` git tags, and a dated tag from the weekly rebuild
-that picks up Debian security updates. Dependabot keeps the (SHA-pinned)
-actions current.
+provenance to `ghcr.io/ruitaodong/qwc2`. Tags: `latest` and `qwc2` from this
+branch, `X.Y.Z` / `X.Y` from `vX.Y.Z` git tags on this branch, and a dated tag
+from manual or weekly rebuilds.
+
+Two GitHub features only read their configuration from the repository's
+default branch, so for this branch they need a copy there:
+
+- **Weekly rebuild** (Debian security updates): copy
+  `.github/workflows/weekly-rebuild-qwc2.yml` to the default branch.
+- **Dependabot** updates for this branch's actions: add an entry with
+  `target-branch: qwc2` to the default branch's `.github/dependabot.yml`.
 
 Verify an image signature with:
 
 ```sh
-cosign verify ghcr.io/ruitaodong/qwc:latest \
+cosign verify ghcr.io/ruitaodong/qwc2:latest \
   --certificate-identity-regexp 'https://github.com/ruitaodong/qwc/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```

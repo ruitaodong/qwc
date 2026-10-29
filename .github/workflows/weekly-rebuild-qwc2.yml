@@ -1,0 +1,21 @@
+name: Weekly qwc2 rebuild
+
+# GitHub runs scheduled workflows only from the default branch, so this file
+# must be on the default branch (e.g. master) to take effect. It re-runs the
+# qwc2 branch's image build to pick up Debian security updates.
+on:
+  schedule:
+    - cron: '35 9 * * 1'
+  workflow_dispatch:
+
+permissions:
+  actions: write   # to dispatch the build workflow
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Rebuild ghcr.io/${{ github.repository_owner }}/qwc2
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh workflow run docker-publish.yml --ref qwc2 --repo "$GITHUB_REPOSITORY"
