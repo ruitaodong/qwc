@@ -8,5 +8,9 @@ export QGIS_SERVER_LOG_LEVEL="${QGIS_SERVER_LOG_LEVEL:-1}"
 . /etc/apache2/envvars
 mkdir -p "$APACHE_RUN_DIR" "$APACHE_LOCK_DIR" "$APACHE_LOG_DIR"
 rm -f "$APACHE_PID_FILE"
+# Optional CORS for the WMS, see /etc/apache2/sites-available/qwc.conf
+if [ -n "${QWC_CORS_ORIGIN:-}" ]; then
+    set -- -DQWC_CORS "$@"
+fi
 update-themes --wait 60 &
 exec apache2 -DFOREGROUND "$@"

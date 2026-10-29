@@ -70,6 +70,7 @@ QGIS 3 stores a small style database next to each project as
 | --- | --- | --- |
 | `QWC_DEFAULT_THEME` | first project by name | project QWC2 opens at `/` |
 | `QGIS_SERVER_LOG_LEVEL` | `1` | QGIS Server log level: 0 info, 1 warning, 2 critical |
+| `QWC_CORS_ORIGIN` | unset (no CORS) | origin allowed to read the WMS from another web app, e.g. `https://app.example` |
 
 The client is the QWC2 stock app, trimmed to what works against plain QGIS
 Server: layer tree, legend, feature info, measuring, drawing, map export,
@@ -89,10 +90,49 @@ docker run ... -v ./config.json:/QWC2/config.json:ro ghcr.io/ruitaodong/qwc
 Apache access logs go to stdout and Apache/QGIS Server errors to stderr, so
 everything shows up in `docker logs qwc`. The container has a health check.
 
+## Running it on a LAN or a tailnet
+
+The image speaks plain HTTP on port 80 and is meant to sit on a private
+network. Two setups work well.
+
+**LAN.** Publish the port on the LAN interface only:
+
+```sh
+docker run -d --name=qwc --restart=unless-stopped \
+  -p 192.168.1.20:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+```
+
+Use the host's LAN address rather than a bare `-p 8080:80`, which listens on
+every interface. Docker's published ports bypass host firewalls such as ufw, so
+a firewall rule won't save you if the host also has a public interface.
+
+**Tailscale.** Keep the container on loopback and let Tailscale add HTTPS:
+
+```sh
+docker run -d --name=qwc --restart=unless-stopped \
+  -p 127.0.0.1:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+tailscale serve --bg localhost:8080
+```
+
+The maps are then at `https://<machine>.<tailnet>.ts.net/`, reachable only from
+your tailnet (narrow it further with Tailscale ACLs). HTTPS matters for more
+than privacy: browsers only allow QWC2's *locate me* button and copy-link
+buttons on secure pages, so over plain `http://192.168.x.x` those two don't
+work. Don't use `tailscale funnel`, which publishes the site to the internet.
+
+Both setups are handled correctly behind the proxy: the client only uses
+relative URLs, redirects and QGIS Server's advertised WMS URLs honour
+`X-Forwarded-Host`/`X-Forwarded-Proto`, so desktop GIS clients connecting to
+`https://<machine>.<tailnet>.ts.net/wms/<name>` get working HTTPS links back.
+
+The WMS sends no CORS header unless you set `QWC_CORS_ORIGIN`. On a private
+network a wildcard would let any website a user happens to visit read your
+maps through their browser; desktop GIS clients don't need CORS at all.
+
 ## Development
 
 ```sh
-docker compose up --build          # serves ./web on http://localhost:8080
+docker compose up --build          # serves ./web on http://localhost:8080 (loopback only)
 docker compose exec qwc qgs.py demo.qgs image.png overlay.json
 ```
 

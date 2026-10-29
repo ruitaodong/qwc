@@ -67,6 +67,10 @@ jobs:
           curl -fsS "http://localhost:8080/wms/test?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetProjectSettings" | grep -q "<Name>test.json</Name>"
           curl -fsS -o map.png -w '%{content_type}' "http://localhost:8080/wms/test?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=test.json&CRS=EPSG:3857&BBOX=5.95e6,0.95e6,6.15e6,1.15e6&WIDTH=256&HEIGHT=256&FORMAT=image/png" | grep -q image/png
           test "$(curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/cgi-bin/qgis_mapserv.fcgi)" = 403
+          # No CORS by default
+          if curl -fsSI "http://localhost:8080/wms/test?SERVICE=WMS&REQUEST=GetCapabilities" | grep -qi access-control-allow-origin; then exit 1; fi
+          # Redirects behind a TLS-terminating proxy (e.g. tailscale serve)
+          test "$(curl -s -o /dev/null -w '%{redirect_url}' -H 'X-Forwarded-Proto: https' -H 'X-Forwarded-Host: maps.example.ts.net' http://localhost:8080/maps/test)" = "https://maps.example.ts.net/?t=test"
           # Themes are rebuilt from /web on (re)start
           docker exec qwc sh -c 'echo "{\"themes\": {\"items\": []}}" > /QWC2/themes.json'
           curl -fsS http://localhost:8080/themes.json | jq -e '.themes.items | length == 0'
