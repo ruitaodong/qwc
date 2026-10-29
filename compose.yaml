@@ -1,0 +1,13 @@
+# Local development: `docker compose up --build`, then open http://localhost:8080
+# Create projects with:
+#   docker compose exec qwc qgs.py name.qgs image.png vector.json
+services:
+  qwc:
+    build: .
+    image: ghcr.io/ruitaodong/qwc
+    ports:
+      - "8080:80"
+    volumes:
+      - ./web:/web
+    environment:
+      QGIS_SERVER_LOG_LEVEL: "1"   # 0=info, 1=warning, 2=critical
