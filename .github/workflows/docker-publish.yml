@@ -105,10 +105,29 @@ jobs:
           provenance: mode=max
           sbom: true
 
-      # Keyless signing with the workflow's OIDC identity (sigstore Fulcio/Rekor)
+      # Keyless signing with the workflow's OIDC identity (sigstore Fulcio/Rekor).
+      # One signature covers every tag: the signed payload names only the digest.
       - name: Sign the published Docker image
         if: github.event_name != 'pull_request'
         env:
-          TAGS: ${{ steps.meta.outputs.tags }}
-          DIGEST: ${{ steps.build-and-push.outputs.digest }}
-        run: echo "${TAGS}" | xargs -I {} cosign sign --yes "{}@${DIGEST}"
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+        run: |
+          # Rekor can record an upload whose response is then lost; the client's
+          # retry gets 409 "equivalent entry already exists". Signing again uses
+          # a fresh key, so a retry of the whole command gets past it.
+          for attempt in 1 2 3; do
+            if cosign sign --yes "${IMAGE}"; then exit 0; fi
+            echo "cosign sign failed (attempt ${attempt}/3), retrying" >&2
+            sleep $((attempt * 15))
+          done
+          exit 1
+
+      - name: Verify the signature
+        if: github.event_name != 'pull_request'
+        env:
+          IMAGE: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}@${{ steps.build-and-push.outputs.digest }}
+        run: |
+          cosign verify "${IMAGE}" \
+            --certificate-identity "https://github.com/${GITHUB_WORKFLOW_REF}" \
+            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+            > /dev/null
