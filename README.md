@@ -120,6 +120,25 @@ than privacy: browsers only allow QWC2's *locate me* button and copy-link
 buttons on secure pages, so over plain `http://192.168.x.x` those two don't
 work. Don't use `tailscale funnel`, which publishes the site to the internet.
 
+**One hostname on both.** If the server's short name resolves on both networks
+(LAN DNS on the LAN, the MagicDNS search domain on the tailnet), publish the
+port on every interface so one URL, `http://<host>:8080/`, works everywhere:
+
+```sh
+docker run -d --name=qwc --restart=unless-stopped \
+  -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
+```
+
+This is fine when the host's only interfaces are the LAN and Tailscale (a
+typical server behind a home or office router). Binding the LAN and Tailscale
+IPs individually (`-p 192.168.1.20:8080:80 -p 100.x.y.z:8080:80`) also works,
+but the container can then fail to start at boot if Docker comes up before
+Tailscale has its address. Links, redirects and WMS URLs follow whichever name
+the browser used, so shared links keep working for anyone with the same search
+domain. HTTPS isn't available on a short name (the Tailscale certificate is for
+`<host>.<tailnet>.ts.net`), so QWC2's *locate me* button won't work there; use
+the full tailnet name with `tailscale serve` if you need it.
+
 Both setups are handled correctly behind the proxy: the client only uses
 relative URLs, redirects and QGIS Server's advertised WMS URLs honour
 `X-Forwarded-Host`/`X-Forwarded-Proto`, so desktop GIS clients connecting to
