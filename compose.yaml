@@ -9,5 +9,8 @@ services:
       - "8080:80"
     volumes:
       - ./web:/web
+      # Optional: your own QWC2 client configuration
+      # - ./config.json:/QWC2/config.json:ro
     environment:
       QGIS_SERVER_LOG_LEVEL: "1"   # 0=info, 1=warning, 2=critical
+      # QWC_DEFAULT_THEME: name    # project opened at /, default: first by name

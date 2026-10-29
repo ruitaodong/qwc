@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Create a QGIS project (.qgs) from raster and vector files.
 
-The resulting project is served by QGIS Server and listed by QGIS Web Client.
+The project is served by QGIS Server and, once the theme list is refreshed
+(done automatically unless --no-themes), shows up in QWC2.
 
     qgs.py [--crs EPSG:3857] [--keep-layer-crs] output.qgs input1 [input2 ...]
 
@@ -11,6 +12,8 @@ background image first, then the vector overlays).
 
 import argparse
 import os
+import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -35,6 +38,8 @@ def parse_args(argv=None):
     p.add_argument("--keep-layer-crs", action="store_true",
                    help="only assign --crs to layers that have no CRS of their own "
                         "(by default every layer is forced to --crs, as before)")
+    p.add_argument("--no-themes", action="store_true",
+                   help="don't refresh the QWC2 theme list afterwards")
     p.add_argument("output", type=Path, help="project file to (over)write, e.g. name.qgs")
     p.add_argument("inputs", type=Path, nargs="+", help="raster and/or vector files")
     return p.parse_args(argv)
@@ -97,11 +102,18 @@ def main(argv=None) -> int:
             print(f"error: could not write {output}: {project.error()}", file=sys.stderr)
             return 1
         print(f"wrote {output}")
-        return 0
     finally:
         if project is not None:
             project.clear()  # release layers before shutdown (avoids a segfault)
         app.exitQgis()
+
+    if args.no_themes or not shutil.which("update-themes"):
+        return 0
+    if subprocess.run(["update-themes"]).returncode != 0:
+        print("warning: project written, but the QWC2 theme list could not be "
+              "refreshed; run update-themes once the server is up", file=sys.stderr)
+        return 3
+    return 0
 
 
 if __name__ == "__main__":
