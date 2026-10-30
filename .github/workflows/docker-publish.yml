@@ -60,6 +60,7 @@ jobs:
           docker exec qwc python3 -c 'import json; json.dump({"type": "FeatureCollection", "features": [{"type": "Feature", "properties": {"name": "box"}, "geometry": {"type": "Polygon", "coordinates": [[[1e6, 6e6], [1.1e6, 6e6], [1.1e6, 6.1e6], [1e6, 6e6]]]}}]}, open("/web/test.json", "w"))'
           docker exec qwc qgs.sh test.qgs test.json
           curl -fsS http://localhost:8080/ | grep -q QWC2App.js
+          curl -fsS http://localhost:8080/demo/ | grep -q "Whole-slide images in QWC2"
           curl -fsS http://localhost:8080/themes.json > themes.json
           jq -e '.themes.items | map(.id) == ["test"]' themes.json
           jq -e '.themes.items[0].url == "/wms/test"' themes.json

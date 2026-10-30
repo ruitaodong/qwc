@@ -70,6 +70,7 @@ RUN apt-get update \
 COPY --from=qwc2 /build/prod/ /QWC2/
 COPY --from=qwc2 /build/themesConfig.py /opt/qwc2/themesConfig.py
 COPY --from=gdal-openslide /out/ /
+COPY demo/ /QWC2/demo/
 COPY etc/qwc.conf /etc/apache2/sites-available/qwc.conf
 COPY bin/ /usr/local/bin/
 

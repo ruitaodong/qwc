@@ -1,0 +1,86 @@
+name: Demo site (GitHub Pages)
+
+# Builds the static PLISM demo (demo/ + pre-rendered slide tiles) and publishes
+# it to GitHub Pages. Needs Settings → Pages → Source: "GitHub Actions", and the
+# qwc2 branch allowed under Settings → Environments → github-pages.
+on:
+  workflow_dispatch:
+  push:
+    branches: [qwc2]
+    paths:
+      - demo/**
+      - bin/demo-slides
+      - bin/build-static-demo
+      - bin/update-themes
+      - gdal-openslide/**
+      - .github/workflows/pages.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build the image
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          load: true
+          tags: qwc:demo
+          cache-from: type=gha,scope=qwc2
+
+      - name: Download the slides and render tiles
+        run: |
+          set -eux
+          mkdir -p web
+          docker run -d --name qwc -v "$PWD/web:/web" qwc:demo
+          for _ in $(seq 60); do
+            docker exec qwc python3 -c "import urllib.request as u; u.urlopen('http://localhost/', timeout=2)" && break
+            sleep 1
+          done
+          docker exec qwc demo-slides
+          # Zoom 16 is about 0.6 µm per pixel and keeps the site under Pages' 1 GB limit
+          docker exec qwc build-static-demo /web/site --max-zoom 16
+          sudo chown -R "$(id -u):$(id -g)" web/site
+          du -sh web/site
+          test "$(du -sm web/site | cut -f1)" -lt 1000
+
+      - name: Show container logs
+        if: always()
+        run: docker logs qwc 2>&1 | tail -50 || true
+
+      - name: Configure Pages
+        uses: actions/configure-pages@45bfe0192ca1faeb007ade9deae92b16b8254a0d # v6.0.0
+
+      - name: Upload site
+        uses: actions/upload-pages-artifact@fc324d3547104276b827a68afc52ff2a11cc49c9 # v5.0.0
+        with:
+          path: web/site
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    permissions:
+      pages: write
+      id-token: write
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}demo/
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@368f82528645a54fb793d4d04e342629a3f51346 # v5.0.1

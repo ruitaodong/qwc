@@ -62,6 +62,33 @@ coordinate display shows pixel positions and its scale bar's "metres" are
 pixels. Annotations to overlay need to use the same pixel coordinates. The
 physical pixel size is in the layer metadata (`openslide.mpp-x`, microns).
 
+## Demo: two scanners, one tissue microarray
+
+`demo/` is a small page showing two scans of the same tissue microarray from
+the [PLISM dataset](https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_wsi),
+one per Aperio scanner (AT2 and GT450).
+
+**In the container, at full resolution.** Install the slides (about 3.3 GB,
+checksum-verified, skipped if already present) and open `/demo/`:
+
+```sh
+docker exec qwc2 demo-slides
+# then http://<host>:8080/demo/
+```
+
+**As a static site, no server.** `build-static-demo` pre-renders both slides to
+map tiles and writes a self-contained copy of QWC2 that any static host can
+serve. Zoom stops at about 0.6 µm per pixel (roughly a 17× objective) so the
+site stays under GitHub Pages' 1 GB limit. The
+[Pages workflow](.github/workflows/pages.yml) builds and publishes it to
+`https://<owner>.github.io/<repo>/demo/` on demand or when the demo changes.
+To enable it: Settings → Pages → Source "GitHub Actions", and allow the
+`qwc2` branch under Settings → Environments → github-pages.
+
+The scans aren't aligned with each other (different scan areas and pixel
+sizes), and colours are the scanners' raw values: the AT2's embedded ICC
+profile isn't applied.
+
 ## The theme list
 
 QWC2 reads its list of maps from `themes.json`. It is rebuilt automatically when

@@ -1,0 +1,146 @@
+#!/usr/bin/env python3
+"""Build a static copy of the PLISM demo for hosting without a server.
+
+Run inside the container after demo-slides. Renders each demo slide to XYZ
+map tiles (WebP) with gdal2tiles, copies the QWC2 app, and writes a theme list
+whose maps use those tiles instead of WMS, plus a client configuration
+without the tools that need QGIS Server. The output directory can be served
+by any static web host, e.g. GitHub Pages.
+
+    build-static-demo /web/site --max-zoom 16
+"""
+
+import argparse
+import json
+import os
+import shutil
+import subprocess
+import sys
+import tempfile
+from pathlib import Path
+
+from osgeo import gdal
+
+gdal.UseExceptions()
+
+QWC2_ROOT = Path(os.environ.get("QWC2_ROOT", "/QWC2"))
+PROJECTS_DIR = Path(os.environ.get("QWC_PROJECTS_DIR", "/web"))
+DEMO = {"plism-hrh-at2": "HRH_AT2.svs", "plism-hrh-gt450": "HRH_GT450.svs"}
+
+# Tools that need QGIS Server (WMS requests, layer metadata) or a real
+# location; the rest (measure, draw, share, ...) work on any map.
+REMOVE = {"Identify", "LayerTree", "MapLegend", "MapCompare", "MapExport", "MapFilter",
+          "MapTip", "ObjectList", "TimeManager", "LocateButton", "API"}
+
+
+def prune_items(items):
+    kept = []
+    for item in items:
+        if item.get("key") in REMOVE:
+            continue
+        if "subitems" in item:
+            item["subitems"] = prune_items(item["subitems"])
+            if not item["subitems"]:
+                continue
+        kept.append(item)
+    return kept
+
+
+def static_config(config):
+    for plugins in config["plugins"].values():
+        plugins[:] = [p for p in plugins if p["name"] not in REMOVE]
+        for plugin in plugins:
+            cfg = plugin.get("cfg", {})
+            for key in ("menuItems", "toolbarItems"):
+                if key in cfg:
+                    cfg[key] = prune_items(cfg[key])
+    return config
+
+
+def render_tiles(slide, out_dir, min_zoom, max_zoom, processes):
+    """Slide -> XYZ WebP tiles. Returns the slide's extent in map units."""
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with tempfile.TemporaryDirectory() as tmp:
+        vrt = Path(tmp) / "slide.vrt"
+        # Map units are level-0 pixels (see gdal-openslide); declaring them as
+        # EPSG:3857 lets gdal2tiles cut a standard web map tile grid without
+        # resampling the image geometry.
+        gdal.Translate(str(vrt), "OPENSLIDE:" + str(slide), format="VRT", outputSRS="EPSG:3857")
+        ds = gdal.Open(str(vrt))
+        extent = [0, -ds.RasterYSize, ds.RasterXSize, 0]
+        ds = None
+        subprocess.run([sys.executable, "-m", "osgeo_utils.gdal2tiles", "--xyz",
+                        "--profile", "mercator", "--zoom", f"{min_zoom}-{max_zoom}",
+                        "--webviewer", "none", "--exclude", "--tiledriver", "WEBP",
+                        "--webp-quality", "80", "--processes", str(processes),
+                        str(vrt), str(out_dir)], check=True)
+    return extent
+
+
+def tile_scales(scales, max_zoom):
+    """Keep map scales down to 4x past the deepest tiles (beyond that is blur)."""
+    finest = 156543.03392804097 / 2 ** max_zoom / 0.00028 / 4
+    return [s for s in scales if s >= finest]
+
+
+def main():
+    p = argparse.ArgumentParser(description=__doc__.split("\n\n")[0])
+    p.add_argument("output", type=Path)
+    p.add_argument("--min-zoom", type=int, default=9)
+    p.add_argument("--max-zoom", type=int, default=16)
+    p.add_argument("--processes", type=int, default=os.cpu_count() or 1)
+    args = p.parse_args()
+
+    live = json.loads((QWC2_ROOT / "themes.json").read_text())["themes"]
+    items = {t["id"]: t for t in live["items"] if t["id"] in DEMO}
+    missing = sorted(set(DEMO) - set(items))
+    if missing:
+        sys.exit(f"build-static-demo: run demo-slides first (missing: {', '.join(missing)})")
+
+    out = args.output
+    if out.exists():
+        shutil.rmtree(out)
+    shutil.copytree(QWC2_ROOT, out)
+
+    themes, backgrounds = [], []
+    for theme_id, slide in DEMO.items():
+        print(f"rendering {slide} (zoom {args.min_zoom}-{args.max_zoom})", flush=True)
+        extent = render_tiles(PROJECTS_DIR / slide, out / "tiles" / theme_id,
+                              args.min_zoom, args.max_zoom, args.processes)
+        live_theme = items[theme_id]
+        bg_name = theme_id + "-tiles"
+        backgrounds.append({
+            "name": bg_name, "title": live_theme["title"], "type": "xyz",
+            "url": f"tiles/{theme_id}/{{z}}/{{x}}/{{y}}.webp", "projection": "EPSG:3857",
+            "thumbnail": live_theme.get("thumbnail"),
+            "sourceConfig": {"minZoom": args.min_zoom, "maxZoom": args.max_zoom, "wrapX": False},
+            "layerConfig": {"extent": extent},
+        })
+        theme = {k: live_theme[k] for k in ("id", "name", "title", "bbox", "initialBbox", "mapCrs",
+                                             "thumbnail", "attribution", "abstract", "keywords")
+                 if k in live_theme}
+        # No WMS: an empty layer tree keeps QWC2 from sending any requests to it
+        theme.update({"url": "", "sublayers": [], "expanded": False,
+                      "backgroundLayers": [{"name": bg_name, "visibility": True}],
+                      "searchProviders": ["coordinates"],
+                      "scales": tile_scales(live_theme.get("scales") or live["defaultScales"],
+                                            args.max_zoom)})
+        themes.append(theme)
+
+    static = {"themes": {
+        **live, "subdirs": [], "items": themes, "defaultTheme": themes[0]["id"],
+        "backgroundLayers": backgrounds, "defaultBackgroundLayers": [], "externalLayers": [],
+        "qwcStaticDemo": True,  # read by the demo page
+    }}
+    (out / "themes.json").write_text(json.dumps(static, indent=2))
+    config = json.loads((out / "config.json").read_text())
+    (out / "config.json").write_text(json.dumps(static_config(config), indent=2))
+    (out / ".nojekyll").touch()  # serve files as they are on GitHub Pages
+
+    size = sum(f.stat().st_size for f in out.rglob("*") if f.is_file())
+    tiles = sum(1 for _ in (out / "tiles").rglob("*.webp"))
+    print(f"static demo in {out}: {tiles} tiles, {size / 2**20:.0f} MB")
+
+
+if __name__ == "__main__":
+    main()

@@ -43,6 +43,7 @@ def parse_args(argv=None):
     p.add_argument("--keep-layer-crs", action="store_true",
                    help="only assign --crs to layers that have no CRS of their own "
                         "(by default every layer is forced to --crs, as before)")
+    p.add_argument("--title", help="map title shown in QWC2 (default: the output file's name)")
     p.add_argument("--no-themes", action="store_true",
                    help="don't refresh the QWC2 theme list afterwards")
     p.add_argument("output", type=Path, help="project file to (over)write, e.g. name.qgs")
@@ -116,7 +117,7 @@ def main(argv=None) -> int:
 
         project = QgsProject.instance()
         project.setCrs(crs)
-        project.setTitle(output.stem)
+        project.setTitle(args.title or output.stem)
 
         for path, forced in inputs:
             layer = load_layer(path, slide=forced)

@@ -37,8 +37,7 @@ def theme(name):
     # internal http://localhost/... URL used while generating.
     wms = f"/wms/{name}"
     return {
-        "url": wms,
-        "title": name,
+        "url": wms,  # title: the project's (qgs.py --title), else its name
         "featureInfoUrl": wms + "?",
         "legendUrl": wms + "?",
         "printUrl": wms + "?",
@@ -80,6 +79,19 @@ def load_generator():
     spec.loader.exec_module(module)
     module.baseUrl = SERVER
     module.qwc2_path = str(GEN_ROOT)
+
+    # The generator requests thumbnails in the first CRS QGIS Server lists
+    # besides CRS:84, which is always EPSG:4326, and treats the first bbox
+    # axis as horizontal. In WMS 1.3.0 EPSG:4326 is latitude-first, so every
+    # thumbnail came out squashed. CRS:84 is the same CRS, longitude-first.
+    original = module.getThumbnail
+
+    def get_thumbnail(config_item, result_item, layers, crs, extent):
+        if crs == "EPSG:4326":
+            crs, extent = "CRS:84", [extent[1], extent[0], extent[3], extent[2]]
+        return original(config_item, result_item, layers, crs, extent)
+
+    module.getThumbnail = get_thumbnail
     return module
 
 

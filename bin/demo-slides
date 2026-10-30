@@ -1,0 +1,80 @@
+#!/usr/bin/env python3
+"""Install the PLISM demo slides: download them into /web and publish them.
+
+Two scans of the same tissue microarray from the PLISM dataset
+(https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_wsi), one per
+Aperio scanner, ~3.3 GB in total. Files already present with the right
+checksum aren't downloaded again. Afterwards the demo page /demo/ links to
+both maps.
+"""
+
+import hashlib
+import os
+import subprocess
+import sys
+import urllib.request
+from pathlib import Path
+
+BASE = "https://github.com/ruitaodong/plism-icc/releases/download/PLISM_wsi/"
+
+# id, file, sha256, title
+SLIDES = [
+    ("plism-hrh-at2", "HRH_AT2.svs",
+     "b9f943650c9090724362ec245800125effac1d1ec67d4da16a3412fe6a762abc",
+     "PLISM HRH, Aperio AT2"),
+    ("plism-hrh-gt450", "HRH_GT450.svs",
+     "00676ddd783b9ff0efba86ccf3d4ea27aa586fb99754cb1471888e1bc8dce05a",
+     "PLISM HRH, Aperio GT450"),
+]
+
+PROJECTS_DIR = Path(os.environ.get("QWC_PROJECTS_DIR", "/web"))
+
+
+def sha256(path):
+    h = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 20), b""):
+            h.update(chunk)
+    return h.hexdigest()
+
+
+def download(name, expected):
+    target = PROJECTS_DIR / name
+    if target.exists():
+        print(f"{name}: checking existing file")
+        if sha256(target) == expected:
+            print(f"{name}: already present")
+            return
+        print(f"{name}: checksum mismatch, downloading again")
+    part = target.with_suffix(target.suffix + ".part")
+    h = hashlib.sha256()
+    with urllib.request.urlopen(BASE + name, timeout=60) as resp, open(part, "wb") as out:
+        total = int(resp.headers.get("Content-Length", 0))
+        done, shown = 0, -1
+        for chunk in iter(lambda: resp.read(1 << 20), b""):
+            out.write(chunk)
+            h.update(chunk)
+            done += len(chunk)
+            pct = done * 100 // total if total else 0
+            if pct // 10 != shown:
+                shown = pct // 10
+                print(f"{name}: {done >> 20} MB" + (f" ({pct}%)" if total else ""), flush=True)
+    if h.hexdigest() != expected:
+        part.unlink()
+        sys.exit(f"{name}: checksum mismatch after download, file discarded")
+    part.rename(target)
+
+
+def main():
+    PROJECTS_DIR.mkdir(parents=True, exist_ok=True)
+    for theme_id, name, digest, title in SLIDES:
+        download(name, digest)
+        subprocess.run(["qgs.py", "--no-themes", "--title", title,
+                        str(PROJECTS_DIR / f"{theme_id}.qgs"), str(PROJECTS_DIR / name)],
+                       check=True)
+    subprocess.run(["update-themes"], check=True)
+    print("Demo ready: open /demo/ on this server")
+
+
+if __name__ == "__main__":
+    main()

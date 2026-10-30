@@ -1,0 +1,154 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Whole-slide images in QWC2 — PLISM demo</title>
+<style>
+  :root {
+    color-scheme: light;
+    --bg: #f6f5f2; --surface: #ffffff; --text: #1d1d1f; --muted: #5d5d66;
+    --border: #e0ddd6; --accent: #7a2f6b; --accent-text: #ffffff; --code: #efece6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      color-scheme: dark;
+      --bg: #17161a; --surface: #222127; --text: #ecebef; --muted: #a8a6b0;
+      --border: #3a3842; --accent: #d79acb; --accent-text: #17161a; --code: #2d2b33;
+    }
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0; background: var(--bg); color: var(--text);
+    font: 16px/1.55 system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  }
+  main { max-width: 64rem; margin: 0 auto; padding: 2.5rem 1.25rem 4rem; }
+  h1 { font-size: clamp(1.6rem, 3.5vw, 2.3rem); line-height: 1.2; margin: 0 0 .5rem; }
+  .lede { color: var(--muted); font-size: 1.1rem; max-width: 46rem; margin: 0 0 2rem; }
+  .notice {
+    background: var(--surface); border: 1px solid var(--border); border-left: 4px solid var(--accent);
+    border-radius: 8px; padding: .9rem 1.1rem; margin: 0 0 2rem; max-width: 46rem;
+  }
+  .notice p { margin: .25rem 0; }
+  .cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 22rem), 1fr)); gap: 1.25rem; }
+  .card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    overflow: hidden; display: flex; flex-direction: column;
+  }
+  .card img { width: 100%; aspect-ratio: 2 / 1; object-fit: cover; background: #fff; display: block; border-bottom: 1px solid var(--border); }
+  .card .body { padding: 1rem 1.15rem 1.2rem; display: flex; flex-direction: column; gap: .6rem; flex: 1; }
+  .card h2 { font-size: 1.2rem; margin: 0; }
+  dl { display: grid; grid-template-columns: max-content 1fr; gap: .15rem .9rem; margin: 0; font-size: .93rem; }
+  dt { color: var(--muted); }
+  dd { margin: 0; font-variant-numeric: tabular-nums; }
+  .open {
+    margin-top: auto; align-self: flex-start; background: var(--accent); color: var(--accent-text);
+    text-decoration: none; font-weight: 600; padding: .55rem 1rem; border-radius: 8px;
+  }
+  .open:focus-visible { outline: 3px solid var(--text); outline-offset: 2px; }
+  .missing { color: var(--muted); font-style: italic; }
+  h3 { font-size: 1.05rem; margin: 2.5rem 0 .4rem; }
+  section p { max-width: 46rem; }
+  code { background: var(--code); padding: .1rem .35rem; border-radius: 4px; font-size: .92em; }
+  pre { background: var(--code); padding: .8rem 1rem; border-radius: 8px; overflow-x: auto; max-width: 46rem; }
+  a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <h1>Whole-slide images in QWC2</h1>
+  <p class="lede">The same tissue microarray from the
+    <a href="https://github.com/ruitaodong/plism-icc/releases/tag/PLISM_wsi">PLISM dataset</a>,
+    scanned on two Aperio scanners and served as web maps by QGIS Server through an
+    OpenSlide plugin for GDAL.</p>
+
+  <div class="notice" id="mode" hidden></div>
+
+  <div class="cards" id="cards"></div>
+
+  <section>
+    <h3>What you’re looking at</h3>
+    <p>Each map is one slide: about 50 tissue cores on a single glass slide, roughly
+      8 gigapixels per scan. Open both and compare the colours: the AT2 renders stain far
+      more saturated than the GT450. The colours shown are the scanners’ raw RGB values.
+      The AT2 file embeds an ICC colour profile that isn’t applied here, so part of the
+      difference you see is exactly what colour management would correct.</p>
+    <p>The two scans cover slightly different areas at different pixel sizes, so their
+      maps aren’t aligned with each other. Map units are slide pixels: the coordinate
+      display shows pixel positions, and the scale bar’s “metres” are pixels.</p>
+    <p>Source: <a href="https://github.com/ruitaodong/qwc/tree/qwc2">ruitaodong/qwc</a>
+      (branch <code>qwc2</code>).</p>
+  </section>
+</main>
+
+<script>
+  "use strict";
+  const SLIDES = [
+    { id: "plism-hrh-at2", title: "Aperio AT2", facts: [
+        ["Pixels", "101,591 × 76,539"], ["Pixel size", "0.253 µm"],
+        ["Area", "25.7 × 19.4 mm"], ["Pyramid", "4 levels, down to 1/32"],
+        ["Colour profile", "embedded (AT2), not applied"] ] },
+    { id: "plism-hrh-gt450", title: "Aperio GT450", facts: [
+        ["Pixels", "108,994 × 81,609"], ["Pixel size", "0.262 µm"],
+        ["Area", "28.6 × 21.4 mm"], ["Pyramid", "4 levels, down to 1/64"],
+        ["Colour profile", "none embedded"] ] },
+  ];
+
+  const cards = document.getElementById("cards");
+  const mode = document.getElementById("mode");
+
+  function el(tag, props = {}, children = []) {
+    const node = Object.assign(document.createElement(tag), props);
+    for (const child of [].concat(children)) node.append(child);
+    return node;
+  }
+
+  function render(themes) {
+    const items = new Map(((themes && themes.items) || []).map(t => [t.id, t]));
+    const isStatic = Boolean(themes && themes.qwcStaticDemo);
+    let available = 0;
+
+    for (const slide of SLIDES) {
+      const theme = items.get(slide.id);
+      if (theme) available++;
+      const facts = el("dl", {}, slide.facts.flatMap(([k, v]) => [el("dt", { textContent: k }), el("dd", { textContent: v })]));
+      const body = el("div", { className: "body" }, [el("h2", { textContent: slide.title }), facts]);
+      if (theme) {
+        body.append(el("a", { className: "open", href: "../?t=" + encodeURIComponent(slide.id), textContent: "Open map" }));
+      } else {
+        body.append(el("p", { className: "missing", textContent: "Not installed on this server." }));
+      }
+      const card = el("article", { className: "card" });
+      if (theme && theme.thumbnail) {
+        card.append(el("img", { src: "../assets/" + theme.thumbnail, alt: "Overview of the " + slide.title + " scan", loading: "lazy" }));
+      }
+      card.append(body);
+      cards.append(card);
+    }
+
+    mode.replaceChildren();
+    if (isStatic) {
+      mode.append(el("p", { innerHTML:
+        "<strong>Static demo.</strong> The slides were pre-rendered into map tiles, so this " +
+        "site needs no server. Zoom stops at about 0.6 µm per pixel (roughly a 17× objective). " +
+        "Run the <code>qwc2</code> container for full 40× resolution." }));
+    } else if (available === SLIDES.length) {
+      mode.append(el("p", { innerHTML:
+        "<strong>Live demo.</strong> QGIS Server renders the slides on request at full " +
+        "resolution, reading only the pyramid level each zoom needs." }));
+    } else {
+      mode.append(el("p", { innerHTML:
+        "The demo slides aren’t installed on this server yet. Install them " +
+        "(about 3.3 GB) with:" }));
+      mode.append(el("pre", { textContent: "docker exec qwc2 demo-slides" }));
+    }
+    mode.hidden = false;
+  }
+
+  fetch("../themes.json", { cache: "no-cache" })
+    .then(r => (r.ok ? r.json() : null))
+    .then(data => render(data && data.themes))
+    .catch(() => render(null));
+</script>
+</body>
+</html>
