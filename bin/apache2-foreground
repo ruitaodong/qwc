@@ -1,0 +1,10 @@
+#!/bin/sh
+# Run Apache in the foreground as PID 1 so it receives container signals.
+set -e
+# Read by etc/qgis-web-client.conf; 0=info, 1=warning, 2=critical
+export QGIS_SERVER_LOG_LEVEL="${QGIS_SERVER_LOG_LEVEL:-1}"
+# shellcheck source=/dev/null
+. /etc/apache2/envvars
+mkdir -p "$APACHE_RUN_DIR" "$APACHE_LOCK_DIR" "$APACHE_LOG_DIR"
+rm -f "$APACHE_PID_FILE"
+exec apache2 -DFOREGROUND "$@"

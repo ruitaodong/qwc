@@ -1,19 +1,13 @@
 # Local development: `docker compose up --build`, then open http://localhost:8080
 # Create projects with:
-#   docker compose exec qwc2 qgs.py name.qgs image.png vector.json
+#   docker compose exec qwc qgs.py name.qgs image.png vector.json
 services:
-  qwc2:
+  qwc:
     build: .
-    image: ghcr.io/ruitaodong/qwc2
+    image: ghcr.io/ruitaodong/qwc
     ports:
-      # Loopback only by default; QWC_BIND=0.0.0.0 (or a LAN IP) to share on
-      # the LAN, or leave it and put `tailscale serve` in front (see README)
-      - "${QWC_BIND:-127.0.0.1}:8080:80"
+      - "8080:80"
     volumes:
       - ./web:/web
-      # Optional: your own QWC2 client configuration
-      # - ./config.json:/QWC2/config.json:ro
     environment:
       QGIS_SERVER_LOG_LEVEL: "1"   # 0=info, 1=warning, 2=critical
-      # QWC_DEFAULT_THEME: name    # project opened at /, default: first by name
-      # QWC_CORS_ORIGIN: https://other-web-app.example   # only if another web app needs the WMS

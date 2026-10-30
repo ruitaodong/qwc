@@ -1,67 +1,52 @@
-# qwc2 — QGIS Server + QWC2 in Docker
-
-This is the `qwc2` branch of [ruitaodong/qwc](https://github.com/ruitaodong/qwc); it publishes `ghcr.io/ruitaodong/qwc2`.
+# qwc — QGIS Server + QGIS Web Client in Docker
 
 A single container that serves raster/vector files as web maps: Apache with
 [QGIS Server](https://docs.qgis.org/latest/en/docs/server_manual/) (QGIS 3.40 LTR
-on Debian 13 "trixie") and [QWC2](https://qwc.app), the current QGIS web client,
-plus a small tool (`qgs.py`) that turns a set of files into a QGIS project.
-
-There is no PHP in the image: QWC2 is a static JavaScript app, and the list of
-maps it offers (`themes.json`) is generated ahead of time.
+on Debian 13 "trixie") and the classic ExtJS-based
+[QGIS Web Client](https://github.com/qgis/qgis-web-client), plus a small tool
+(`qgs.py`) that turns a set of files into a QGIS project.
 
 ## Quick start
 
 ```sh
-docker pull ghcr.io/ruitaodong/qwc2
-docker run --name=qwc2 --rm -d -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
+docker pull ghcr.io/ruitaodong/qwc
+docker run --name=qwc --rm -d -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc
 ```
 
 Put your data into the `/web` volume, then create one project per map:
 
 ```sh
-docker exec qwc2 qgs.py name1.qgs image1.png vector1.json vector2.json
-docker exec qwc2 qgs.py name2.qgs image2.png vector3.json vector4.json
+docker exec qwc qgs.py name1.qgs image1.png vector1.json vector2.json
+docker exec qwc qgs.py name2.qgs image2.png vector3.json vector4.json
 ```
 
-Open <http://localhost:8080>. QWC2 opens the first project; its theme switcher
-(*Map & Tools* → *Theme*) lists `name1` and `name2`. Projects are stacked in the order
-given, so the last file is drawn on top: list the background image first.
-Running `qgs.py` again with the same name replaces the project.
+Open <http://localhost:8080>: it lists `name1` and `name2`. Clicking `name1` shows
+`image1.png`, `vector1.json` and `vector2.json`; clicking `name2` shows
+`image2.png`, `vector3.json` and `vector4.json`.
+
+Layers are stacked in the order given, so the last file is drawn on top: list the
+background image first. Running `qgs.py` again with the same project name
+replaces the project, and QGIS Server picks up the change automatically.
+(`qgs.sh` still works as an alias for existing scripts.)
 
 | URL | What it is |
 | --- | --- |
-| `/` | QWC2, opened on the default project |
-| `/?t=<name>` | QWC2 opened on `/web/<name>.qgs` |
+| `/` | list of projects in `/web` |
+| `/maps/<name>` | web client for `/web/<name>.qgs` |
 | `/wms/<name>` | WMS endpoint for `/web/<name>.qgs` (e.g. `?SERVICE=WMS&REQUEST=GetCapabilities`) |
-| `/maps/<name>` | old QGIS Web Client link, redirects to `/?t=<name>` |
-
-## The theme list
-
-QWC2 reads its list of maps from `themes.json`. It is rebuilt automatically when
-the container starts and every time `qgs.py` writes a project. If you put
-`.qgs` files into `/web` some other way, refresh it yourself:
-
-```sh
-docker exec qwc2 update-themes
-```
-
-Projects QGIS Server can't open are left out and reported (details in
-`docker logs qwc2`); the previous list is kept if the server isn't reachable.
 
 ## `qgs.py` options
 
 ```
-qgs.py [--crs EPSG:3857] [--keep-layer-crs] [--no-themes] output.qgs input [input ...]
+qgs.py [--crs EPSG:3857] [--keep-layer-crs] output.qgs input [input ...]
 ```
 
-`--crs` sets the project CRS (default `EPSG:3857`). By default every layer is
-also *assigned* that CRS, which suits images with a world file but no `.prj` and
-GeoJSON whose coordinates are in Web Mercator. With `--keep-layer-crs`, layers
-that already declare a CRS (a `.prj`, a GeoTIFF, standard lon/lat GeoJSON, …)
-keep it and are reprojected on the fly; only layers without one get `--crs`.
-`--no-themes` skips the theme list refresh (useful when creating many projects
-in a row; run `update-themes` once at the end).
+`--crs` sets the project CRS (default `EPSG:3857`, the web client's map
+projection). By default every layer is also *assigned* that CRS, which suits
+images with a world file but no `.prj` and GeoJSON whose coordinates are in
+Web Mercator. With `--keep-layer-crs`, layers that already declare a CRS (a
+`.prj`, a GeoTIFF, standard lon/lat GeoJSON, …) keep it and are reprojected on
+the fly; only layers without one get `--crs`.
 
 QGIS 3 stores a small style database next to each project as
 `<name>_attachments.zip`; keep it together with the `.qgs` file.
@@ -70,119 +55,42 @@ QGIS 3 stores a small style database next to each project as
 
 | Environment variable | Default | Meaning |
 | --- | --- | --- |
-| `QWC_DEFAULT_THEME` | first project by name | project QWC2 opens at `/` |
 | `QGIS_SERVER_LOG_LEVEL` | `1` | QGIS Server log level: 0 info, 1 warning, 2 critical |
-| `QWC_CORS_ORIGIN` | unset (no CORS) | origin allowed to read the WMS from another web app, e.g. `https://app.example` |
-
-The client is the QWC2 stock app, trimmed to what works against plain QGIS
-Server: layer tree, legend, feature info, measuring, drawing, map export,
-compare/swipe, filters, time manager and sharing links. Features that need the
-[qwc-services](https://github.com/qwc-services/qwc-docker) backends
-(login, editing, search, permalinks, reports) or third-party services (routing,
-street-level imagery) are switched off, so the app makes no requests outside
-your server. Printing is off because `qgs.py` projects have no print layout.
-
-To customise the client, mount your own `config.json` (start from the one in
-the image: `docker cp qwc2:/QWC2/config.json .`):
-
-```sh
-docker run ... -v ./config.json:/QWC2/config.json:ro ghcr.io/ruitaodong/qwc2
-```
 
 Apache access logs go to stdout and Apache/QGIS Server errors to stderr, so
-everything shows up in `docker logs qwc2`. The container has a health check.
-
-## Running it on a LAN or a tailnet
-
-The image speaks plain HTTP on port 80 and is meant to sit on a private
-network. Two setups work well.
-
-**LAN.** Publish the port on the LAN interface only:
-
-```sh
-docker run -d --name=qwc2 --restart=unless-stopped \
-  -p 192.168.1.20:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
-```
-
-Use the host's LAN address rather than a bare `-p 8080:80`, which listens on
-every interface. Docker's published ports bypass host firewalls such as ufw, so
-a firewall rule won't save you if the host also has a public interface.
-
-**Tailscale.** Keep the container on loopback and let Tailscale add HTTPS:
-
-```sh
-docker run -d --name=qwc2 --restart=unless-stopped \
-  -p 127.0.0.1:8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
-tailscale serve --bg localhost:8080
-```
-
-The maps are then at `https://<machine>.<tailnet>.ts.net/`, reachable only from
-your tailnet (narrow it further with Tailscale ACLs). HTTPS matters for more
-than privacy: browsers only allow QWC2's *locate me* button and copy-link
-buttons on secure pages, so over plain `http://192.168.x.x` those two don't
-work. Don't use `tailscale funnel`, which publishes the site to the internet.
-
-**One hostname on both.** If the server's short name resolves on both networks
-(LAN DNS on the LAN, the MagicDNS search domain on the tailnet), publish the
-port on every interface so one URL, `http://<host>:8080/`, works everywhere:
-
-```sh
-docker run -d --name=qwc2 --restart=unless-stopped \
-  -p 8080:80 -v data-dir:/web ghcr.io/ruitaodong/qwc2
-```
-
-This is fine when the host's only interfaces are the LAN and Tailscale (a
-typical server behind a home or office router). Binding the LAN and Tailscale
-IPs individually (`-p 192.168.1.20:8080:80 -p 100.x.y.z:8080:80`) also works,
-but the container can then fail to start at boot if Docker comes up before
-Tailscale has its address. Links, redirects and WMS URLs follow whichever name
-the browser used, so shared links keep working for anyone with the same search
-domain. HTTPS isn't available on a short name (the Tailscale certificate is for
-`<host>.<tailnet>.ts.net`), so QWC2's *locate me* button won't work there; use
-the full tailnet name with `tailscale serve` if you need it.
-
-Both setups are handled correctly behind the proxy: the client only uses
-relative URLs, redirects and QGIS Server's advertised WMS URLs honour
-`X-Forwarded-Host`/`X-Forwarded-Proto`, so desktop GIS clients connecting to
-`https://<machine>.<tailnet>.ts.net/wms/<name>` get working HTTPS links back.
-
-The WMS sends no CORS header unless you set `QWC_CORS_ORIGIN`. On a private
-network a wildcard would let any website a user happens to visit read your
-maps through their browser; desktop GIS clients don't need CORS at all.
+everything shows up in `docker logs qwc`. The container has a health check.
 
 ## Development
 
 ```sh
-docker compose up --build          # serves ./web on http://localhost:8080 (loopback only)
-docker compose exec qwc2 qgs.py demo.qgs image.png overlay.json
+docker compose up --build          # serves ./web on http://localhost:8080
+docker compose exec qwc qgs.py demo.qgs image.png overlay.json
 ```
 
-The image is built from a single multi-stage `Dockerfile`. Stage 1 downloads a
-pinned QWC2 LTS release (the prebuilt stock app plus QWC2's theme generator,
-both checksum-verified) and adapts its `config.json`
-(`etc/qwc2/configure.py`); stage 2 installs Apache and QGIS Server from Debian.
-To move to a newer QWC2, update the `QWC2_*` build arguments.
+The image is built from a single multi-stage `Dockerfile`. Stage 1 downloads
+QGIS Web Client at a pinned commit and patches its configuration (each patch is
+verified, so the build fails if anything doesn't apply); stage 2 installs
+Apache, PHP, QGIS Server and PyQGIS from Debian.
 
-CI (`.github/workflows/docker-publish.yml`) builds the image and smoke-tests it
-(no PHP present, project creation, theme generation, client page, redirects,
-WMS GetProjectSettings and GetMap, theme rebuild on restart), then publishes
-signed multi-arch images (`linux/amd64`, `linux/arm64`) with SBOM and
-provenance to `ghcr.io/ruitaodong/qwc2`. Tags: `latest` and `qwc2` from this
-branch, `X.Y.Z` / `X.Y` from `vX.Y.Z` git tags on this branch, and a dated tag
-from manual or weekly rebuilds.
-
-Two GitHub features only read their configuration from the repository's
-default branch, so for this branch they need a copy there:
-
-- **Weekly rebuild** (Debian security updates): copy
-  `.github/workflows/weekly-rebuild-qwc2.yml` to the default branch.
-- **Dependabot** updates for this branch's actions: add an entry with
-  `target-branch: qwc2` to the default branch's `.github/dependabot.yml`.
+CI (`.github/workflows/docker-publish.yml`) builds the image, runs a smoke test
+against it (project creation, listing, client page, WMS GetProjectSettings and
+GetMap), then publishes signed multi-arch images (`linux/amd64`,
+`linux/arm64`) with SBOM and provenance to `ghcr.io`. Tags: `latest` and
+`master` from the default branch, `X.Y.Z` / `X.Y` from `vX.Y.Z` git tags, and a
+dated tag from the weekly rebuild that picks up Debian security updates.
+Dependabot keeps the (SHA-pinned) actions current.
 
 Verify an image signature with:
 
 ```sh
-cosign verify ghcr.io/ruitaodong/qwc2:latest \
+cosign verify ghcr.io/ruitaodong/qwc:latest \
   --certificate-identity-regexp 'https://github.com/ruitaodong/qwc/' \
   --certificate-oidc-issuer https://token.actions.githubusercontent.com
 ```
+
+## Note on the web client
+
+QGIS Web Client (v1) has been archived upstream for years; this image pins its
+last useful commit and patches it to work with QGIS 3 Server. Its successor is
+[QWC2](https://github.com/qgis/qwc2), a modern React client, which would be the
+natural next step if the old ExtJS interface becomes a limitation.
