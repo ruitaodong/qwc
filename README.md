@@ -11,6 +11,12 @@ plus a small tool (`qgs.py`) that turns a set of files into a QGIS project.
 There is no PHP in the image: QWC2 is a static JavaScript app, and the list of
 maps it offers (`themes.json`) is generated ahead of time.
 
+## Demo pages
+
+- Static GitHub Pages demo: <https://ruitaodong.github.io/qwc/demo/>
+- Local demo in the container: <http://localhost:8080/demo/>
+- Local app home: <http://localhost:8080/>
+
 ## Quick start
 
 ```sh
