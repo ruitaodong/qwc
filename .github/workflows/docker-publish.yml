@@ -105,6 +105,76 @@ jobs:
               assert all(abs(a - b) <= 20 for a, b in zip(got, want)), (xy, got, want)
           PY
 
+      - name: iSyntax test (libisyntax GDAL plugin)
+        run: |
+          set -eux
+          # libisyntax's own test slide (OpenPhi, Zenodo record 5037046). Skip
+          # rather than block a release if Zenodo is unreachable; a file that
+          # downloads but doesn't match its published checksum still fails.
+          if ! curl -fsSL --retry 3 --retry-delay 10 -o testslide.isyntax \
+               "https://zenodo.org/records/5037046/files/testslide.isyntax?download=1"; then
+            echo "::warning::Zenodo unreachable, iSyntax test skipped"
+            exit 0
+          fi
+          echo "d762ed9e13d4c47549672a54777f40e3  testslide.isyntax" | md5sum -c -
+          docker cp testslide.isyntax qwc:/web/testslide.isyntax
+          docker exec -i qwc python3 - <<'PY'
+          import numpy as np
+          from osgeo import gdal
+          gdal.UseExceptions()
+          ds = gdal.Open("/web/testslide.isyntax")
+          assert ds.GetDriver().ShortName == "iSyntax", ds.GetDriver().ShortName
+          assert ds.RasterCount == 4
+          base = [ds.GetRasterBand(b) for b in (1, 2, 3)]
+          n_ovr = base[0].GetOverviewCount()
+          print("size", ds.RasterXSize, ds.RasterYSize, "overviews", n_ovr)
+          print("mpp", ds.GetMetadataItem("isyntax.mpp-x"), "| ICC profile:",
+                bool(ds.GetMetadataItem("SOURCE_ICC_PROFILE", "COLOR_PROFILE")))
+          assert n_ovr >= 2 and ds.GetMetadataItem("isyntax.mpp-x")
+          assert ds.GetMetadataItem("isyntax.barcode") is None  # withheld by default
+
+          # Find tissue on the smallest level, then check pyramid alignment there
+          small = base[0].GetOverview(n_ovr - 1)
+          img = small.ReadAsArray().astype(float)
+          ys, xs = np.nonzero(img < 200)
+          assert len(xs) > 0, "no tissue found"
+          f = ds.RasterXSize / small.XSize
+          clamp = lambda v, size: min(max(v, 16), size - 528) // 2 * 2
+          x0 = clamp(int(np.median(xs) * f) - 256, ds.RasterXSize)
+          y0 = clamp(int(np.median(ys) * f) - 256, ds.RasterYSize)
+          full = np.stack([b.ReadAsArray(x0, y0, 512, 512) for b in base]).astype(float)
+          assert full.std() > 10, "test region has no structure"
+          down = full.reshape(3, 256, 2, 256, 2).mean(axis=(2, 4))
+          lvl1 = [b.GetOverview(0) for b in base]
+          def diff(dx, dy):
+              half = np.stack([o.ReadAsArray(x0 // 2 + dx, y0 // 2 + dy, 256, 256) for o in lvl1]).astype(float)
+              return np.abs(half[:, 8:-8, 8:-8] - down[:, 8:-8, 8:-8]).mean()
+          scores = {(dx, dy): diff(dx, dy) for dx in range(-3, 4) for dy in range(-3, 4)}
+          best = min(scores, key=scores.get)
+          print("level 0 vs level 1: best shift", best, "mean diff %.2f" % scores[best],
+                "| unshifted %.2f" % scores[(0, 0)])
+          assert best == (0, 0), "pyramid levels are misaligned"
+          assert scores[(0, 0)] < 20
+
+          # Associated images open
+          for sub, _ in ds.GetSubDatasets():
+              a = gdal.Open(sub)
+              print(sub.split(":")[1], a.RasterXSize, "x", a.RasterYSize)
+          PY
+          # And through qgs.py and QGIS Server
+          docker exec qwc qgs.sh isyntax.qgs testslide.isyntax
+          curl -fsS http://localhost:8080/themes.json | jq -e '.themes.items | map(.id) | index("isyntax") != null'
+          W=$(docker exec qwc python3 -c "from osgeo import gdal; d = gdal.Open('/web/testslide.isyntax'); print(d.RasterXSize, d.RasterYSize)")
+          read -r SX SY <<< "$W"
+          curl -fsS -o isyntax.png "http://localhost:8080/wms/isyntax?SERVICE=WMS&VERSION=1.3.0&REQUEST=GetMap&LAYERS=testslide.isyntax&CRS=EPSG:3857&BBOX=0,-${SY},${SX},0&WIDTH=400&HEIGHT=300&FORMAT=image/png"
+          /tmp/svs/bin/python - <<'PY'
+          from PIL import Image
+          im = Image.open("isyntax.png").convert("L")
+          dark = sum(1 for p in im.getdata() if p < 200) / (im.width * im.height)
+          print(f"rendered map: {dark:.1%} of pixels show tissue")
+          assert dark > 0.005, "map is blank"
+          PY
+
       - name: Show container logs
         if: always()
         run: docker logs qwc || true
