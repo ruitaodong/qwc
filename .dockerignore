@@ -5,3 +5,4 @@ compose.yaml
 web/
 tests/
 gdal-openslide/*.so
+gdal-isyntax/*.so

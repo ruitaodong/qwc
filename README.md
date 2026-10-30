@@ -39,10 +39,12 @@ Running `qgs.py` again with the same name replaces the project.
 
 ## Whole-slide images
 
-Slides are read through an OpenSlide plugin for GDAL built into the image
-([`gdal-openslide/`](gdal-openslide/)), which serves the slide's own
-pyramid levels as overviews: zoomed-out views stay fast however large the
-slide is. `qgs.py` recognises slides by itself:
+Slides are read through two GDAL plugins built into the image, which serve
+each slide's own pyramid levels as overviews, so zoomed-out views stay fast
+however large the slide is: an OpenSlide plugin
+([`gdal-openslide/`](gdal-openslide/)) for most formats, and a libisyntax
+plugin ([`gdal-isyntax/`](gdal-isyntax/)) for Philips iSyntax, which OpenSlide
+can't read. `qgs.py` recognises slides by itself:
 
 ```sh
 docker exec qwc2 qgs.py biopsy.qgs biopsy.svs
@@ -50,7 +52,8 @@ docker exec qwc2 qgs.py biopsy.qgs biopsy.svs
 
 Supported (OpenSlide 3.4.1, as shipped by Debian): Aperio `.svs`/`.tif`,
 Hamamatsu `.ndpi`/`.vms`/`.vmu`, Leica `.scn`, MIRAX `.mrxs`, Philips `.tiff`,
-Sakura `.svslide`, Trestle `.tif`, Ventana `.bif`/`.tif`. A slide stored as a
+Sakura `.svslide`, Trestle `.tif`, Ventana `.bif`/`.tif`; and Philips
+iSyntax `.isyntax` through libisyntax. A slide stored as a
 *generic* tiled TIFF looks like any other TIFF, so name it explicitly:
 `qgs.py slide.qgs OPENSLIDE:slide.tif`. Formats added in OpenSlide 4
 (DICOM, Zeiss `.czi`) are not available. MIRAX slides are an `.mrxs` file plus
@@ -222,7 +225,8 @@ To move to a newer QWC2, update the `QWC2_*` build arguments.
 CI (`.github/workflows/docker-publish.yml`) builds the image and smoke-tests it
 (no PHP present, project creation, theme generation, client page, redirects,
 WMS GetProjectSettings and GetMap, theme rebuild on restart, and a synthetic
-Aperio slide through the OpenSlide plugin, checked pixel by pixel), then publishes
+Aperio slide through the OpenSlide plugin, checked pixel by pixel, and
+libisyntax's public iSyntax test slide, checked for pyramid alignment), then publishes
 signed multi-arch images (`linux/amd64`, `linux/arm64`) with SBOM and
 provenance to `ghcr.io/ruitaodong/qwc2`. Tags: `latest` and `qwc2` from this
 branch, `X.Y.Z` / `X.Y` from `vX.Y.Z` git tags on this branch, and a dated tag

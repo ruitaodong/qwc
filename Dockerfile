@@ -33,7 +33,7 @@ COPY etc/qwc2/configure.py .
 RUN python3 configure.py prod/config.json
 
 # ---------------------------------------------------------------------------
-# Stage 2: GDAL plugin for whole-slide images (gdal-openslide/), built
+# Stage 2: GDAL plugin for whole-slide images via OpenSlide (gdal-openslide/), built
 # against the same Debian GDAL and OpenSlide the runtime image installs
 # ---------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim AS gdal-openslide
@@ -48,7 +48,33 @@ COPY gdal-openslide/ .
 RUN make && make install DESTDIR=/out
 
 # ---------------------------------------------------------------------------
-# Stage 3: Apache + QGIS Server (+ PyQGIS for qgs.py). No PHP.
+# Stage 3: GDAL plugin for Philips iSyntax (gdal-isyntax/), with libisyntax
+# (not packaged by Debian) built from a pinned, checksummed source tarball
+# ---------------------------------------------------------------------------
+FROM debian:${DEBIAN_RELEASE}-slim AS gdal-isyntax
+
+ARG LIBISYNTAX_COMMIT=92471dbf6c70a6736e53e1e45564b170b74a81c1
+ARG LIBISYNTAX_SHA256=f4a6caa43a1b0f389eb3c1be64156c58b61a1d6fbc115b2a41aa242713fa44ee
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends \
+        ca-certificates curl g++ make cmake pkg-config libgdal-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+RUN curl -fsSL -o libisyntax.tgz \
+        "https://codeload.github.com/amspath/libisyntax/tar.gz/${LIBISYNTAX_COMMIT}" \
+ && echo "${LIBISYNTAX_SHA256}  libisyntax.tgz" | sha256sum -c - \
+ && mkdir libisyntax && tar -xzf libisyntax.tgz -C libisyntax --strip-components=1
+COPY gdal-isyntax/ plugin/
+RUN make -C plugin build-libisyntax LIBISYNTAX=/src/libisyntax \
+ && make -C plugin LIBISYNTAX=/src/libisyntax \
+ && make -C plugin install LIBISYNTAX=/src/libisyntax DESTDIR=/out
+
+# ---------------------------------------------------------------------------
+# Stage 4: Apache + QGIS Server (+ PyQGIS for qgs.py). No PHP.
 # ---------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim
 
@@ -70,6 +96,7 @@ RUN apt-get update \
 COPY --from=qwc2 /build/prod/ /QWC2/
 COPY --from=qwc2 /build/themesConfig.py /opt/qwc2/themesConfig.py
 COPY --from=gdal-openslide /out/ /
+COPY --from=gdal-isyntax /out/ /
 COPY demo/ /QWC2/demo/
 COPY etc/qwc.conf /etc/apache2/sites-available/qwc.conf
 COPY bin/ /usr/local/bin/
@@ -85,7 +112,7 @@ RUN a2enmod headers rewrite fcgid \
  && ln -s /QWC2 /opt/qwc2/static \
  && echo '{"themes": {"items": []}}' > /QWC2/themes.json \
  && mkdir -p /web \
- && python3 -c "from osgeo import gdal; gdal.AllRegister(); assert gdal.GetDriverByName('OpenSlide'), 'OpenSlide GDAL plugin not loaded'" \
+ && python3 -c "from osgeo import gdal; gdal.AllRegister(); assert gdal.GetDriverByName('OpenSlide'), 'OpenSlide GDAL plugin not loaded'; assert gdal.GetDriverByName('iSyntax'), 'iSyntax GDAL plugin not loaded'" \
  && apache2ctl configtest \
  && mods="$(apache2ctl -M 2>/dev/null)" \
  && grep -q mpm_event_module <<<"$mods" \
