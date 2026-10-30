@@ -2,7 +2,8 @@
 
 This is the `qwc2` branch of [ruitaodong/qwc](https://github.com/ruitaodong/qwc); it publishes `ghcr.io/ruitaodong/qwc2`.
 
-A single container that serves raster/vector files as web maps: Apache with
+A single container that serves raster/vector files, including digital-pathology
+whole-slide images, as web maps: Apache with
 [QGIS Server](https://docs.qgis.org/latest/en/docs/server_manual/) (QGIS 3.40 LTR
 on Debian 13 "trixie") and [QWC2](https://qwc.app), the current QGIS web client,
 plus a small tool (`qgs.py`) that turns a set of files into a QGIS project.
@@ -36,6 +37,31 @@ Running `qgs.py` again with the same name replaces the project.
 | `/wms/<name>` | WMS endpoint for `/web/<name>.qgs` (e.g. `?SERVICE=WMS&REQUEST=GetCapabilities`) |
 | `/maps/<name>` | old QGIS Web Client link, redirects to `/?t=<name>` |
 
+## Whole-slide images
+
+Slides are read through an OpenSlide plugin for GDAL built into the image
+([`gdal-openslide/`](gdal-openslide/)), which serves the slide's own
+pyramid levels as overviews: zoomed-out views stay fast however large the
+slide is. `qgs.py` recognises slides by itself:
+
+```sh
+docker exec qwc2 qgs.py biopsy.qgs biopsy.svs
+```
+
+Supported (OpenSlide 3.4.1, as shipped by Debian): Aperio `.svs`/`.tif`,
+Hamamatsu `.ndpi`/`.vms`/`.vmu`, Leica `.scn`, MIRAX `.mrxs`, Philips `.tiff`,
+Sakura `.svslide`, Trestle `.tif`, Ventana `.bif`/`.tif`. A slide stored as a
+*generic* tiled TIFF looks like any other TIFF, so name it explicitly:
+`qgs.py slide.qgs OPENSLIDE:slide.tif`. Formats added in OpenSlide 4
+(DICOM, Zeiss `.czi`) are not available. MIRAX slides are an `.mrxs` file plus
+a directory of the same name; copy both into `/web`.
+
+Slides have no geographic position: map units are slide pixels (level 0),
+with the top-left corner at 0,0 and y negative downwards, so QWC2's
+coordinate display shows pixel positions and its scale bar's "metres" are
+pixels. Annotations to overlay need to use the same pixel coordinates. The
+physical pixel size is in the layer metadata (`openslide.mpp-x`, microns).
+
 ## The theme list
 
 QWC2 reads its list of maps from `themes.json`. It is rebuilt automatically when
@@ -53,6 +79,7 @@ Projects QGIS Server can't open are left out and reported (details in
 
 ```
 qgs.py [--crs EPSG:3857] [--keep-layer-crs] [--no-themes] output.qgs input [input ...]
+       (an input can be OPENSLIDE:file to force reading it as a slide)
 ```
 
 `--crs` sets the project CRS (default `EPSG:3857`). By default every layer is
@@ -160,12 +187,15 @@ docker compose exec qwc2 qgs.py demo.qgs image.png overlay.json
 The image is built from a single multi-stage `Dockerfile`. Stage 1 downloads a
 pinned QWC2 LTS release (the prebuilt stock app plus QWC2's theme generator,
 both checksum-verified) and adapts its `config.json`
-(`etc/qwc2/configure.py`); stage 2 installs Apache and QGIS Server from Debian.
+(`etc/qwc2/configure.py`); stage 2 compiles the OpenSlide GDAL plugin against
+Debian's GDAL; stage 3 installs Apache and QGIS Server from Debian and the
+plugin, and fails the build if GDAL can't load it.
 To move to a newer QWC2, update the `QWC2_*` build arguments.
 
 CI (`.github/workflows/docker-publish.yml`) builds the image and smoke-tests it
 (no PHP present, project creation, theme generation, client page, redirects,
-WMS GetProjectSettings and GetMap, theme rebuild on restart), then publishes
+WMS GetProjectSettings and GetMap, theme rebuild on restart, and a synthetic
+Aperio slide through the OpenSlide plugin, checked pixel by pixel), then publishes
 signed multi-arch images (`linux/amd64`, `linux/arm64`) with SBOM and
 provenance to `ghcr.io/ruitaodong/qwc2`. Tags: `latest` and `qwc2` from this
 branch, `X.Y.Z` / `X.Y` from `vX.Y.Z` git tags on this branch, and a dated tag

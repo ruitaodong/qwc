@@ -3,3 +3,5 @@
 *.md
 compose.yaml
 web/
+tests/
+gdal-openslide/*.so

@@ -33,7 +33,22 @@ COPY etc/qwc2/configure.py .
 RUN python3 configure.py prod/config.json
 
 # ---------------------------------------------------------------------------
-# Stage 2: Apache + QGIS Server (+ PyQGIS for qgs.py). No PHP.
+# Stage 2: GDAL plugin for whole-slide images (gdal-openslide/), built
+# against the same Debian GDAL and OpenSlide the runtime image installs
+# ---------------------------------------------------------------------------
+FROM debian:${DEBIAN_RELEASE}-slim AS gdal-openslide
+
+# hadolint ignore=DL3008
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends g++ make pkg-config libgdal-dev libopenslide-dev \
+ && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /src
+COPY gdal-openslide/ .
+RUN make && make install DESTDIR=/out
+
+# ---------------------------------------------------------------------------
+# Stage 3: Apache + QGIS Server (+ PyQGIS for qgs.py). No PHP.
 # ---------------------------------------------------------------------------
 FROM debian:${DEBIAN_RELEASE}-slim
 
@@ -47,12 +62,14 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 RUN apt-get update \
  && apt-get install -y --no-install-recommends \
         apache2 libapache2-mod-fcgid \
-        qgis-server qgis-providers python3-qgis \
+        qgis-server qgis-providers python3-qgis python3-gdal \
+        libopenslide0 \
         fonts-dejavu-core tini \
  && rm -rf /var/lib/apt/lists/*
 
 COPY --from=qwc2 /build/prod/ /QWC2/
 COPY --from=qwc2 /build/themesConfig.py /opt/qwc2/themesConfig.py
+COPY --from=gdal-openslide /out/ /
 COPY etc/qwc.conf /etc/apache2/sites-available/qwc.conf
 COPY bin/ /usr/local/bin/
 
@@ -67,6 +84,7 @@ RUN a2enmod headers rewrite fcgid \
  && ln -s /QWC2 /opt/qwc2/static \
  && echo '{"themes": {"items": []}}' > /QWC2/themes.json \
  && mkdir -p /web \
+ && python3 -c "from osgeo import gdal; gdal.AllRegister(); assert gdal.GetDriverByName('OpenSlide'), 'OpenSlide GDAL plugin not loaded'" \
  && apache2ctl configtest \
  && mods="$(apache2ctl -M 2>/dev/null)" \
  && grep -q mpm_event_module <<<"$mods" \

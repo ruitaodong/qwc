@@ -8,6 +8,11 @@ The project is served by QGIS Server and, once the theme list is refreshed
 
 Inputs are added in order, so the last one is drawn on top (e.g. pass the
 background image first, then the vector overlays).
+
+Whole-slide images (Aperio .svs, Hamamatsu .ndpi/.vms, MIRAX .mrxs, Leica,
+...) are opened through the OpenSlide GDAL driver automatically. A slide in
+generic tiled TIFF form can't be told apart from an ordinary TIFF, so name it
+explicitly: OPENSLIDE:slide.tif
 """
 
 import argparse
@@ -41,12 +46,36 @@ def parse_args(argv=None):
     p.add_argument("--no-themes", action="store_true",
                    help="don't refresh the QWC2 theme list afterwards")
     p.add_argument("output", type=Path, help="project file to (over)write, e.g. name.qgs")
-    p.add_argument("inputs", type=Path, nargs="+", help="raster and/or vector files")
+    p.add_argument("inputs", nargs="+",
+                   help="raster, vector and/or whole-slide files (OPENSLIDE:file to force a slide)")
     return p.parse_args(argv)
 
 
-def load_layer(path: Path) -> QgsMapLayer | None:
-    """Open *path* as a vector layer, falling back to a raster layer."""
+OPENSLIDE = "OPENSLIDE:"
+
+
+def is_slide(path: Path) -> bool:
+    """True if the OpenSlide GDAL driver recognises *path* as a slide."""
+    try:
+        from osgeo import gdal
+    except ImportError:
+        return False
+    if gdal.GetDriverByName("OpenSlide") is None:
+        return False
+    with gdal.quiet_errors():
+        return gdal.IdentifyDriverEx(str(path), allowed_drivers=["OpenSlide"]) is not None
+
+
+def load_layer(path: Path, slide: bool = False) -> QgsMapLayer | None:
+    """Open *path* as a slide, vector layer or raster layer, in that order."""
+    if slide or is_slide(path):
+        # The prefix makes sure OpenSlide (with its pyramid as overviews)
+        # reads the file, not GDAL's GeoTIFF driver at full resolution only.
+        layer = QgsRasterLayer(OPENSLIDE + str(path), path.name, "gdal")
+        if layer.isValid():
+            return layer
+        if slide:
+            return None
     vector = QgsVectorLayer(str(path), path.name, "ogr")
     if vector.isValid():
         return vector
@@ -60,9 +89,14 @@ def load_layer(path: Path) -> QgsMapLayer | None:
 def main(argv=None) -> int:
     args = parse_args(argv)
     output = args.output.resolve()
-    inputs = [p.resolve() for p in args.inputs]
+    # (path, forced through OpenSlide?) for each input, OPENSLIDE: prefix stripped
+    inputs = []
+    for arg in args.inputs:
+        text = str(arg)
+        forced = text.upper().startswith(OPENSLIDE)
+        inputs.append((Path(text[len(OPENSLIDE):] if forced else text).resolve(), forced))
 
-    missing = [str(p) for p in inputs if not p.exists()]
+    missing = [str(p) for p, _ in inputs if not p.exists()]
     if missing:
         print("error: input not found:", ", ".join(missing), file=sys.stderr)
         return 2
@@ -84,16 +118,18 @@ def main(argv=None) -> int:
         project.setCrs(crs)
         project.setTitle(output.stem)
 
-        for path in inputs:
-            layer = load_layer(path)
+        for path, forced in inputs:
+            layer = load_layer(path, slide=forced)
             if layer is None:
-                print(f"error: {path} is neither a readable vector nor raster file",
-                      file=sys.stderr)
+                what = "an OpenSlide slide" if forced else "a readable vector or raster file"
+                print(f"error: {path} is not {what}", file=sys.stderr)
                 return 1
             if not args.keep_layer_crs or not layer.crs().isValid():
                 layer.setCrs(crs)
             project.addMapLayer(layer)
-            kind = "vector" if isinstance(layer, QgsVectorLayer) else "raster"
+            kind = ("vector" if isinstance(layer, QgsVectorLayer)
+                    else "slide" if layer.source().upper().startswith(OPENSLIDE)
+                    else "raster")
             print(f"added {path.name} as {kind} layer ({layer.crs().authid()})")
 
         output.parent.mkdir(parents=True, exist_ok=True)
